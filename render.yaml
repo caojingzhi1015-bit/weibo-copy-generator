@@ -1,0 +1,14 @@
+# Render.com 部署配置
+# 推送 GitHub 后，在 dashboard.render.com 中 "New Web Service" 连接仓库即可。
+# 或使用 Render Blueprint 自动识别此文件。
+services:
+  - type: web
+    name: weibo-copy-generator
+    env: python
+    region: singapore
+    buildCommand: pip install -r requirements.txt
+    startCommand: cd backend && python server.py
+    envVars:
+      - key: PORT
+        value: "5050"
+    autoDeploy: true

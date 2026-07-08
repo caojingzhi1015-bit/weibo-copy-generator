@@ -1,0 +1,27 @@
+{
+  "cookies": "",
+  "user_id_list": [
+    "1721030997",
+    "1340425601",
+    "1749127163",
+    "1644395354",
+    "1782906052"
+  ],
+  "keywords": {
+    "live": ["音乐直播", "超话空降", "直播ING", "空降超话", "艺人直播", "明星直播", "线上演唱会"],
+    "brand": ["品牌代言人", "代言官宣", "新代言", "品牌大使", "品牌挚友", "代言人官宣"],
+    "show": ["巡演", "演唱会", "开票", "音乐节", "livehouse", "livehouse演出", "现场演出"],
+    "daily": ["粉丝互动", "宠粉", "营业", "翻牌", "超话互动", "粉丝福利"],
+    "hotspot": ["音乐联动", "破圈合作", "梦幻联动", "跨界合作", "联名", "破圈"]
+  },
+  "scrape_interval_hours": 24,
+  "max_pages_per_keyword": 3,
+  "min_engagement": 100,
+  "min_followers": 500,
+  "max_age_days": 7,
+  "request_delay_seconds": 2,
+  "user_agents": [
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.0 Mobile/15E148 Safari/604.1",
+    "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/116.0.0.0 Mobile Safari/537.36"
+  ]
+}

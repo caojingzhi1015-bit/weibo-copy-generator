@@ -1,0 +1,10 @@
+# 微博音乐演出文案生成器 - Python 依赖
+# 部署到 Render.com 时会自动从此文件安装
+
+flask>=3.0
+flask-cors>=4.0
+requests>=2.31
+beautifulsoup4>=4.12
+apscheduler>=3.10
+lxml>=4.9
+weibo-spider>=0.3.0
