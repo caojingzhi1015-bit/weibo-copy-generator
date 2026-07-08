@@ -15,6 +15,7 @@ import sys
 import logging
 
 from flask import Flask, jsonify, request, send_from_directory
+from flask_cors import CORS
 
 # 添加当前目录到 Python 路径
 sys.path.insert(0, os.path.dirname(__file__))

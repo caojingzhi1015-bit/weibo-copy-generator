@@ -740,25 +740,22 @@ const STORAGE_KEYS = {
 
 // ---- API 集成模块 ----
 const API_CONFIG = {
-  // 自动检测后端地址：生产环境使用同源，开发环境使用 localhost:5050
-  baseURL: (() => {
-    const host = window.location.hostname;
-    // 本地开发：使用独立端口
-    if (host === 'localhost' || host === '127.0.0.1') {
-      return 'http://localhost:5050';
-    }
-    // 生产部署：前后端同源（Flask 托管前端）
-    return window.location.origin;
-  })(),
-  enabled: true,                      // 是否启用后端 API
-  timeout: 8000,                      // 请求超时（毫秒）
+  // 多级后端地址自动探测（按优先级）
+  backends: [
+    'https://honest-webs-teach.loca.lt',            // 当前 loca.lt 隧道（即时可用）
+    'https://weibo-copy-generator.onrender.com',     // Render 部署后可切换
+    'http://localhost:5050',                          // 本地开发
+  ],
+  baseURL: '',  // 探测后自动设置
+  enabled: true,
+  timeout: 8000,
 };
 
 let apiAvailable = false;             // 后端 API 是否可用
 let remoteLibrary = null;             // 从后端获取的话术库缓存
 
 /**
- * 通用 API 请求封装。
+ * 通用 API 请求封装（支持多后端自动切换）。
  */
 async function apiFetch(path, options = {}) {
   if (!API_CONFIG.enabled) return null;
@@ -766,32 +763,56 @@ async function apiFetch(path, options = {}) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), API_CONFIG.timeout);
 
-  try {
-    const url = `${API_CONFIG.baseURL}${path}`;
-    const resp = await fetch(url, {
-      ...options,
-      signal: controller.signal,
-      headers: {
-        'Content-Type': 'application/json',
-        ...(options.headers || {}),
-      },
-    });
-    clearTimeout(timer);
-
-    if (!resp.ok) {
-      console.warn(`API ${path} 返回状态 ${resp.status}`);
-      return null;
+  // 如果有已探测到的 baseURL，直接用
+  if (API_CONFIG.baseURL) {
+    try {
+      const url = `${API_CONFIG.baseURL}${path}`;
+      const resp = await fetch(url, {
+        ...options,
+        signal: controller.signal,
+        headers: { 'Content-Type': 'application/json', 'Bypass-Tunnel-Reminder': 'true', ...(options.headers || {}) },
+      });
+      clearTimeout(timer);
+      if (resp.ok) return await resp.json();
+    } catch (e) {
+      clearTimeout(timer);
+      API_CONFIG.baseURL = ''; // 重置，重新探测
     }
-    return await resp.json();
-  } catch (e) {
-    clearTimeout(timer);
-    if (e.name === 'AbortError') {
-      console.warn(`API ${path} 请求超时`);
-    } else {
-      console.warn(`API ${path} 请求失败:`, e.message);
-    }
-    return null;
   }
+
+  // 探测可用后端
+  for (const backend of API_CONFIG.backends) {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 3000);
+    try {
+      const resp = await fetch(`${backend}/api/status`, {
+        signal: ctrl.signal,
+        headers: { 'Bypass-Tunnel-Reminder': 'true' },
+      });
+      clearTimeout(t);
+      if (resp.ok) {
+        API_CONFIG.baseURL = backend;
+        console.log('API backend detected:', backend);
+        // 用探测到的 URL 重新调用
+        const url = `${backend}${path}`;
+        const ctrl2 = new AbortController();
+        const t2 = setTimeout(() => ctrl2.abort(), API_CONFIG.timeout);
+        try {
+          const resp2 = await fetch(url, {
+            ...options,
+            signal: ctrl2.signal,
+            headers: { 'Content-Type': 'application/json', 'Bypass-Tunnel-Reminder': 'true', ...(options.headers || {}) },
+          });
+          clearTimeout(t2);
+          clearTimeout(timer);
+          if (resp2.ok) return await resp2.json();
+        } catch { clearTimeout(t2); }
+      }
+    } catch { clearTimeout(t); }
+  }
+
+  clearTimeout(timer);
+  return null;
 }
 
 /**
