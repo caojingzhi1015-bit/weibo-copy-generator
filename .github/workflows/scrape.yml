@@ -1,0 +1,117 @@
+name: 定时爬取微博话术库
+
+on:
+  schedule:
+    # 每6小时运行一次 (UTC时间)
+    - cron: '0 */6 * * *'
+  workflow_dispatch:  # 支持手动触发
+    inputs:
+      force_full:
+        description: '强制全量爬取'
+        type: boolean
+        default: false
+
+permissions:
+  contents: write  # 允许推送更新
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: 检出代码
+        uses: actions/checkout@v4
+
+      - name: 安装 Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: 安装依赖
+        run: |
+          pip install -r requirements.txt
+          pip install weibo-spider
+
+      - name: 运行爬虫
+        env:
+          WEIBO_COOKIE: ${{ secrets.WEIBO_COOKIE }}
+        run: |
+          cd backend
+          # 将 GitHub Secret 中的 Cookie 注入 config.json
+          python -c "
+          import json
+          with open('config.json','r',encoding='utf-8') as f:
+              config = json.load(f)
+          import os
+          cookie = os.environ.get('WEIBO_COOKIE','')
+          if cookie:
+              config['cookies'] = cookie
+              with open('config.json','w',encoding='utf-8') as f:
+                  json.dump(config, f, ensure_ascii=False, indent=2)
+              print('Cookie configured from GitHub Secret')
+          else:
+              print('WARNING: WEIBO_COOKIE secret not set, using built-in static library')
+          "
+          # 如果有Cookie则爬取，否则跳过
+          if [ -n "$WEIBO_COOKIE" ]; then
+            python scraper.py || echo "Scraper finished with warnings"
+          else
+            echo "No Cookie configured, skipping live scrape"
+          fi
+
+      - name: 导出话术库为静态JSON
+        run: |
+          cd backend
+          python -c "
+          import json, os
+          from datetime import datetime
+          from library_manager import load_library, save_library
+          from classifier import build_library
+
+          # 尝试加载现有话术库
+          lib = load_library()
+
+          # 如果爬取到了新数据（data/scraped_posts.json存在），构建话术库
+          scraped_path = os.path.join('data', 'scraped_posts.json')
+          if os.path.exists(scraped_path):
+              with open(scraped_path, 'r', encoding='utf-8') as f:
+                  scraped = json.load(f)
+              new_lib = build_library(scraped)
+              from library_manager import update_library
+              lib = update_library(new_lib)
+
+          # 更新元数据
+          lib['_meta'] = lib.get('_meta', {})
+          lib['_meta']['updated_at'] = datetime.now().isoformat()
+          lib['_meta']['source'] = 'github-actions'
+
+          # 写入项目根目录供前端读取
+          output_path = os.path.join('..', 'library.json')
+          with open(output_path, 'w', encoding='utf-8') as f:
+              json.dump(lib, f, ensure_ascii=False, indent=2)
+          print(f'Library exported to library.json ({os.path.getsize(output_path)} bytes)')
+
+          # 打印各类型统计
+          for cat in ['live','brand','show','daily','hotspot']:
+              cat_data = lib.get(cat, {})
+              samples = len(cat_data.get('sample_texts', []))
+              verbs = len(cat_data.get('verbs', []))
+              print(f'  {cat}: {samples} samples, {verbs} verbs')
+          "
+
+      - name: 提交更新
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          # 检查 library.json 是否有变化
+          if git diff --quiet library.json; then
+            echo "library.json unchanged, skipping commit"
+          else
+            git add library.json
+            git commit -m "chore: auto-update library.json [skip ci]"
+            git push
+            echo "library.json updated and pushed"
+          fi

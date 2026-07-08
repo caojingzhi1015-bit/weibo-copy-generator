@@ -740,19 +740,42 @@ const STORAGE_KEYS = {
 
 // ---- API 集成模块 ----
 const API_CONFIG = {
-  // 多级后端地址自动探测（按优先级）
+  // 多级数据源（按优先级）：
+  // 1. library.json（GitHub Actions 定时更新，同源静态文件，永久）
+  // 2. 后端 API（实时爬取，需额外部署）
   backends: [
-    'https://honest-webs-teach.loca.lt',            // 当前 loca.lt 隧道（即时可用）
-    'https://weibo-copy-generator.onrender.com',     // Render 部署后可切换
-    'http://localhost:5050',                          // 本地开发
+    'https://honest-webs-teach.loca.lt',
+    'https://weibo-copy-generator.onrender.com',
+    'http://localhost:5050',
   ],
-  baseURL: '',  // 探测后自动设置
+  baseURL: '',
   enabled: true,
   timeout: 8000,
 };
 
-let apiAvailable = false;             // 后端 API 是否可用
-let remoteLibrary = null;             // 从后端获取的话术库缓存
+let apiAvailable = false;
+let remoteLibrary = null;
+
+/**
+ * 从同源静态 library.json 加载话术库。
+ * GitHub Actions 每6小时自动爬取并更新此文件到 GitHub Pages。
+ * 这是主要的永久数据源，无需任何后端服务器。
+ */
+async function fetchStaticLibrary() {
+  try {
+    const resp = await fetch('./library.json?t=' + Date.now(), {
+      cache: 'no-cache',
+      signal: AbortSignal.timeout(5000),
+    });
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data && data._meta && (data._meta.total_posts > 0 || data._meta.updated_at)) {
+        return data;
+      }
+    }
+  } catch (e) { /* 静态文件不存在，降级 */ }
+  return null;
+}
 
 /**
  * 通用 API 请求封装（支持多后端自动切换）。
@@ -816,9 +839,18 @@ async function apiFetch(path, options = {}) {
 }
 
 /**
- * 检查后端 API 连接状态。
+ * 检查数据源：优先静态 library.json，其次后端 API。
  */
 async function checkAPIConnection() {
+  // 优先：静态 library.json（永久数据源）
+  const staticLib = await fetchStaticLibrary();
+  if (staticLib) {
+    remoteLibrary = staticLib;
+    apiAvailable = true;
+    console.log('Using static library.json from GitHub Pages');
+    return { source: 'static_json', total_posts: staticLib._meta?.total_posts || 0 };
+  }
+  // 其次：后端 API
   const data = await apiFetch('/api/status');
   if (data) {
     apiAvailable = true;
@@ -829,7 +861,8 @@ async function checkAPIConnection() {
 }
 
 /**
- * 从后端获取话术库数据。
+ * 从后端获取话术库数据（实时 API）。
+ * 静态 library.json 已在 checkAPIConnection 中优先加载。
  */
 async function fetchRemoteLibrary() {
   const data = await apiFetch('/api/library');
